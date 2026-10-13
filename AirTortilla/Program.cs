@@ -2,22 +2,11 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.AccessControl;
 using AirTortilla.code;
 
-//Console.WriteLine("---CREAR RESERVA---");
-//Reserva r1=crearReserva();
-//Console.WriteLine(r1.reservaToRegistro());
-//Console.WriteLine("---LEER RESERVA---");
-
-//string[] contenido = leerArchivo("registros/"+r1.destiny+".csv", true, true);
-//Console.WriteLine("Ingrese el contenido a buscar dentro de la ultima reserva");
-//List<string> filtrado = busqueda(Console.ReadLine(), contenido);
-//foreach (string linea in filtrado)
-//{
-  //  Console.WriteLine(linea);
-//}
-  menu();
+menu();
 
 List<string> seleccionarRegistro()
 {
@@ -39,11 +28,9 @@ List<string> seleccionarRegistro()
     return registros.ToList();
 }
 
-
-
 void menu()
 {
-    List<String> opciones = ["1 : CREAR RESERVA","2 : LEER REGISTRO","3 : BUSCAR EN REGISTRO","4 : SALIR"];
+    List<String> opciones = ["1 : CREAR RESERVA","2 : LEER REGISTRO","3 : BUSCAR EN REGISTRO","4 : RECIBIR RESERVAS DE RAW","5 : SALIR"];
     
     
     
@@ -80,17 +67,21 @@ void menu()
                 Console.WriteLine("Ingrese el texto a buscar");
                 string texto = Console.ReadLine();
                 foreach (string[] cont in reg){
-                    foreach (string registro in cont)
-                    {
+                    
                         List<string> filtrado = busqueda(texto, cont.ToArray()).Distinct().ToList();
                         foreach (string linea in filtrado)
                         {
                             Console.WriteLine("Encontrado: ");
                             Console.WriteLine(linea);
                         }
-                    }}
+                    }
                 break;
             case 4:
+                Console.WriteLine("Organizando reservas...");
+                dividirReservas();
+                Console.WriteLine("Reservas organizadas!");
+                break;
+            case 5:
                 Console.WriteLine("Adios!");
                 return;
                 break;
@@ -101,6 +92,7 @@ void menu()
         }
     }
 }
+  
 
 
 List<string> busqueda(string texto, string[] lineas)
@@ -154,6 +146,8 @@ List<string[]> leerArchivo(List<string> rutas, Boolean lineaAlinea, Boolean impr
     return devolver;
 }
 
+
+
 void crearArchivo(string ruta)
 {
     string carpeta = Path.GetDirectoryName(ruta);
@@ -187,6 +181,27 @@ void escribirEnArchivo(String texto, String ruta)
     {
         Console.WriteLine("Ha ocurrido un error escribiendo en el archvo: "+ruta + "error:\n"+e);
         throw;
+    }
+}
+void dividirReservas()
+{
+    List<string> raw =new List<string> { "rawData/raw.csv" };
+    List<string[]> contenido = leerArchivo(raw, false, false);
+    List<Reserva> Reservas = new List<Reserva>();
+    
+    foreach (string[] reg in  contenido)
+    {
+        foreach (string linea in reg)
+        {
+            Reservas.Add(Reserva.RecReserva(linea));
+        }
+    }
+
+    Reservas.Sort((a, b) => a.getDate().CompareTo(b.getDate()));
+
+    foreach (Reserva r in Reservas)
+    {
+        escribirEnArchivo(r.reservaToRegistro()+"\n", "registros/"+r.destiny+".csv");
     }
 }
 
@@ -235,7 +250,7 @@ Reserva crearReserva()
 
     } while (terminado.Equals("S"));
 
-    Reserva r1 = new Reserva(destiny, origin, flightNumber, personaXasiento);
+    Reserva r1 = new Reserva(destiny, origin, flightNumber, personaXasiento, DateOnly.FromDateTime(DateTime.Now));
     escribirEnArchivo(r1.reservaToRegistro()+"\n", "registros/"+r1.destiny+".csv");
     return r1;
 }
