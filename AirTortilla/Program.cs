@@ -122,7 +122,7 @@ List<string[]> leerArchivo(List<string> rutas, Boolean lineaAlinea, Boolean impr
         {  
             contenidoL = File.ReadAllLines(ruta).ToList();
             devolver.Add(contenidoL.ToArray());
-            foreach (string linea in contenidoL)
+            foreach (string linea in contenidoL.Skip(1))
             {
                 if(imprimir){
                     if (lineaAlinea)
@@ -157,6 +157,7 @@ void crearArchivo(string ruta)
         if (!File.Exists(ruta))
         {
             using(File.Create(ruta));
+            File.AppendAllText(ruta, "Prefijo_PaisOrigen_Año_Mes_Dia_PaisDestino_CodigoVuelo(Nombre1_Apellidos_DNI_Edad_Asiento)\n");
             Console.WriteLine("Archivo creado!");
         }
         else
@@ -175,6 +176,7 @@ void escribirEnArchivo(String texto, String ruta)
     try
     {
         crearArchivo(ruta);
+        
         File.AppendAllText(ruta, texto+"\n");
     }
     catch (Exception e)
@@ -191,7 +193,7 @@ void dividirReservas()
     
     foreach (string[] reg in  contenido)
     {
-        foreach (string linea in reg)
+        foreach (string linea in reg.Skip(1))
         {
             Reservas.Add(Reserva.RecReserva(linea));
         }
