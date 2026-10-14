@@ -39,7 +39,7 @@ void menu()
         {
             Console.WriteLine(opcion);
         }
-        Console.WriteLine("\nInserte la opcion deseada: ");
+        Console.WriteLine("\nInserte la opcion deseada:  " );
         
             
         
