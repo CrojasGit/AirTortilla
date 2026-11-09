@@ -4,20 +4,20 @@ public class Person
 {
     private string nombre;
     private string apellidos;
-    private int edad;
     private string documento;
+    private DateOnly fechaNacimiento;
 
-    public Person(string nombre, string apellidos, int edad, string documento)
+    public Person(string nombre, string apellidos, string documento, DateOnly fechaNacimiento)
     {
         this.nombre = nombre;
         this.apellidos = apellidos;
-        this.edad = edad;
         this.documento = documento;
-        
+        this.fechaNacimiento = fechaNacimiento;
+
     }
     public string Nombre => this.nombre;
     public string Apellidos => this.apellidos;
-    public int Edad => this.edad;
     public string Documento => this.documento;
-    
+    public DateOnly FechaNacimiento => this.fechaNacimiento;
+
 }

@@ -1,0 +1,49 @@
+services:
+  mariadb:
+    image: mariadb:11.8
+    container_name: airtortilla-db
+    restart: unless-stopped
+
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: AirTortilla
+      MARIADB_USER: airtortilla_admin
+      MARIADB_PASSWORD: ${DB_ADMIN_PASSWORD}
+
+    ports:
+      - "127.0.0.1:3307:3306"
+
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./docker/procedures.sql:/docker-entrypoint-initdb.d/02-procedures.sql:ro
+
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  airtortilla:
+    build:
+      context: ./AirTortilla
+      dockerfile: Dockerfile
+
+    container_name: airtortilla-app
+
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: 3306
+      DB_NAME: AirTortilla
+      DB_USER: airtortilla_admin
+      DB_PASSWORD: ${DB_ADMIN_PASSWORD}
+
+    stdin_open: true
+    tty: true
+
+volumes:
+  mariadb_data:

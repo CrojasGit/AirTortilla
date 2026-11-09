@@ -1,258 +1,788 @@
-﻿// See https://aka.ms/new-console-template for more information
-
-using System.Collections.Immutable;
-using System.Diagnostics;
+﻿
 using System.Globalization;
-using System.Security.AccessControl;
 using AirTortilla.code;
+using MySqlConnector;
 
-menu();
+// Es preferible cargar esta cadena desde variables de entorno o configuración.
+// No guardes la contraseña real en el repositorio.
+string dbHost = Environment.GetEnvironmentVariable("DB_HOST") ?? "127.0.0.1";
+uint dbPort = uint.Parse(Environment.GetEnvironmentVariable("DB_PORT") ?? "3307");
+string dbName = Environment.GetEnvironmentVariable("DB_NAME") ?? "AirTortilla";
+string dbUser = Environment.GetEnvironmentVariable("DB_USER") ?? "airtortilla_admin";
 
-List<string> seleccionarRegistro()
+string dbPassword =
+    Environment.GetEnvironmentVariable("DB_PASSWORD")
+    ?? Environment.GetEnvironmentVariable("DB_ADMIN_PASSWORD")
+    ?? throw new InvalidOperationException("No se ha configurado la contraseña de MariaDB.");
+
+string connectionString =
+    $"Server={dbHost};Port={dbPort};Database={dbName};User ID={dbUser};Password={dbPassword};";
+
+await Menu();
+
+// ------------------------------------------------------------
+// MENÚ PRINCIPAL
+// ------------------------------------------------------------
+
+async Task Menu()
 {
-    Console.WriteLine("Ingrese el numero del registro a seleccionar (-1 para todos)");
-    List<string> devolver = new List<string>();
-    string[] registros= Directory.GetFiles("registros", "*.csv");
-    for (int i = 0; i < registros.Length; i++)
+    while (Sesion.UsuarioActual == null)
     {
-        Console.WriteLine(i+" - "+registros[i]);
-    }
+        Console.Clear();
+        Console.WriteLine("===== AIR TORTILLA =====");
 
-    int opt = int.Parse(Console.ReadLine());
-    if (opt !=-1)
-    {
-        devolver.Add(registros[opt]);
-        return devolver;
-    }
+        Usuario? usuario = await Login(connectionString);
 
-    return registros.ToList();
-}
-
-void menu()
-{
-    List<String> opciones = ["1 : CREAR RESERVA","2 : LEER REGISTRO","3 : BUSCAR EN REGISTRO","4 : RECIBIR RESERVAS DE RAW","5 : SALIR"];
-    
-    
-    
-    while(true){
-        foreach (string opcion in opciones)
+        if (usuario == null)
         {
-            Console.WriteLine(opcion);
-        }
-        Console.WriteLine("\nInserte la opcion deseada:  " );
-        
-            
-        
-        
-        switch (int.Parse(Console.ReadLine()))
-        {
-            case 1:
-                Console.WriteLine("\n---CREAR RESERVA---\n");
-                Reserva r1 = crearReserva();
-                Console.WriteLine(r1.reservaToRegistro());
-                break;
-            case 2:
-                Console.WriteLine("\n---LEER REGISTRO---\n");
-                List<string> archivos = seleccionarRegistro();
-                Console.WriteLine("Desea leer linea a linea? (S/N)");
-                Boolean siono = Console.ReadLine().ToUpper() == "S";
-                foreach (string registro in archivos)
-                {
-                    leerArchivo(new List<string> { registro }, siono, true);
-                }
-                break;
-            case 3:
-                archivos = seleccionarRegistro();
-                List<string[]> reg = leerArchivo(archivos, false, false).ToList();
-                Console.WriteLine("Ingrese el texto a buscar");
-                string texto = Console.ReadLine();
-                foreach (string[] cont in reg){
-                    
-                        List<string> filtrado = busqueda(texto, cont.ToArray()).Distinct().ToList();
-                        foreach (string linea in filtrado)
-                        {
-                            Console.WriteLine("Encontrado: ");
-                            Console.WriteLine(linea);
-                        }
-                    }
-                break;
-            case 4:
-                Console.WriteLine("Organizando reservas...");
-                dividirReservas();
-                Console.WriteLine("Reservas organizadas!");
-                break;
-            case 5:
-                Console.WriteLine("Adios!");
+            Console.WriteLine("\nNo se ha podido iniciar sesión.");
+            Console.WriteLine("Pulsa ENTER para volver a intentarlo o escribe S para salir.");
+
+            if ((Console.ReadLine() ?? "").Trim()
+                .Equals("S", StringComparison.OrdinalIgnoreCase))
                 return;
-                break;
-            default:
-                Console.WriteLine("Opcion incorrecta, vuelvalo a intentar...");
-                break;
-                
-        }
-    }
-}
-  
-
-
-List<string> busqueda(string texto, string[] lineas)
-{
-    List<string> devolver = new List<string>();
-    foreach (string linea in lineas)
-    {
-        if (linea.Contains(texto))
-        {
-            devolver.Add(linea);
-            
         }
     }
 
-    return devolver;
-}
-
-List<string[]> leerArchivo(List<string> rutas, Boolean lineaAlinea, Boolean imprimir)
-{
-    List<string[]> devolver = new List<string[]>();
-    
-    List<string> contenidoL= new List<string>();
-    
-    foreach (string ruta in rutas)
+    while (Sesion.UsuarioActual != null)
     {
+        Console.Clear();
+
+        Usuario usuario = Sesion.UsuarioActual!;
+
+        Console.WriteLine("===== AIR TORTILLA =====");
+        Console.WriteLine($"Sesión: {usuario.Nombre} {usuario.Apellido1}");
+        Console.WriteLine($"Rol: {usuario.TipoUsuario}");
+        Console.WriteLine();
+
+        Console.WriteLine("1. Crear reserva");
+        Console.WriteLine("2. Consultar reservas");
+        Console.WriteLine("3. Buscar reservas en la base de datos");
+        Console.WriteLine("4. Importar reservas desde rawData/raw.csv");
+
+        if (Sesion.EsAdministrador())
+            Console.WriteLine("5. Crear usuario");
+
+        Console.WriteLine("0. Cerrar sesión");
+        Console.Write("\nSelecciona una opción: ");
+
+        string opcion = Console.ReadLine() ?? "";
+
         try
-        {  
-            contenidoL = File.ReadAllLines(ruta).ToList();
-            devolver.Add(contenidoL.ToArray());
-            foreach (string linea in contenidoL.Skip(1))
+        {
+            switch (opcion)
             {
-                if(imprimir){
-                    if (lineaAlinea)
-                    {
-                        Console.WriteLine("Pulsa enter para continuar: \n");
-                        Console.ReadLine();
-                    }
+                case "1":
+                    await CrearReserva();
+                    break;
 
-                    Console.WriteLine(linea);
-                }
+                case "2":
+                    await LeerReservasBD();
+                    break;
+
+                case "3":
+                    await BuscarReservasBD();
+                    break;
+
+                case "4":
+                    await RecibirReservasDesdeRaw();
+                    break;
+
+                case "5" when Sesion.EsAdministrador():
+                    await CrearUsuario();
+                    break;
+
+                case "0":
+                    Sesion.Cerrar();
+                    Console.WriteLine("Sesión cerrada.");
+                    break;
+
+                default:
+                    Console.WriteLine("Opción no válida.");
+                    break;
             }
-            
-            
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            Console.WriteLine(e);
-            throw;
+            Console.WriteLine("\nSe ha producido un error:");
+            Console.WriteLine(ex.Message);
         }
-    }
-    return devolver;
-}
 
-
-
-void crearArchivo(string ruta)
-{
-    string carpeta = Path.GetDirectoryName(ruta);
-    Directory.CreateDirectory(carpeta);
-    try
-    {
-        if (!File.Exists(ruta))
+        if (Sesion.UsuarioActual != null)
         {
-            using(File.Create(ruta));
-            File.AppendAllText(ruta, "Prefijo_PaisOrigen_Año_Mes_Dia_PaisDestino_CodigoVuelo(Nombre1_Apellidos_DNI_Edad_Asiento)\n");
-            Console.WriteLine("Archivo creado!");
+            Console.WriteLine("\nPulsa ENTER para continuar...");
+            Console.ReadLine();
         }
-        else
-        {
-            Console.WriteLine("El archvo ya existia!");
-        }
-    }
-    catch (Exception e)
-    {
-        Console.WriteLine("Error al crear archivo: " + e.Message);
     }
 }
 
-void escribirEnArchivo(String texto, String ruta)
+// ------------------------------------------------------------
+// AUTENTICACIÓN
+// ------------------------------------------------------------
+
+async Task<Usuario?> Login(string connectionString)
 {
+    Console.Write("Documento: ");
+    string documento = Console.ReadLine()?.Trim() ?? "";
+
+    Console.Write("Contraseña: ");
+    string contraseña = Console.ReadLine() ?? "";
+
+    Usuario? usuario = await Autenticacion.IniciarSesion(
+        connectionString,
+        documento,
+        contraseña
+    );
+
+    if (usuario == null)
+        return null;
+
+    Sesion.Iniciar(usuario);
+    Console.WriteLine($"\nBienvenido, {usuario.Nombre}.");
+
+    return usuario;
+}
+
+// ------------------------------------------------------------
+// CREACIÓN DE RESERVAS
+// ------------------------------------------------------------
+
+async Task CrearReserva()
+{
+    Console.WriteLine("\n===== CREAR RESERVA =====");
+
+    Reserva reserva = CrearReservaDesdeConsola();
+
+    int idReserva = await GuardarReserva(connectionString, reserva);
+
+    // Se conserva la exportación CSV como copia de los registros.
+    EscribirEnArchivo(
+        reserva.reservaToRegistro(),
+        Path.Combine("registros", reserva.destiny + ".csv")
+    );
+
+    Console.WriteLine($"\nReserva guardada correctamente. ID: {idReserva}");
+}
+
+Reserva CrearReservaDesdeConsola()
+{
+    string destiny = LeerTextoObligatorio("Destino (código IATA): ").ToUpperInvariant();
+    string origin = LeerTextoObligatorio("Origen (código IATA): ").ToUpperInvariant();
+    string flightNumber = LeerTextoObligatorio("Código del vuelo: ").ToUpperInvariant();
+
+    Dictionary<Person, int> personaXasiento = new();
+    bool añadirPersona = true;
+
+    while (añadirPersona)
+    {
+        Console.WriteLine($"\nPasajero {personaXasiento.Count + 1}");
+
+        string nombre = LeerTextoObligatorio("Nombre: ");
+        string apellidos = LeerTextoObligatorio("Apellidos: ");
+        string documento = LeerTextoObligatorio("Documento: ");
+
+        DateOnly fechaNacimiento = LeerFecha("Fecha de nacimiento (dd/MM/yyyy): ");
+        int asiento = LeerEnteroPositivo("Número de asiento: ");
+
+        Person persona = new Person(
+            nombre,
+            apellidos,
+            documento,
+            fechaNacimiento
+        );
+
+        if (personaXasiento.Keys.Any(p =>
+                p.Documento.Equals(documento, StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.WriteLine("Ese pasajero ya está incluido en esta reserva.");
+            continue;
+        }
+
+        if (personaXasiento.ContainsValue(asiento))
+        {
+            Console.WriteLine("Ese asiento ya está ocupado en esta reserva.");
+            continue;
+        }
+
+        personaXasiento.Add(persona, asiento);
+
+        Console.Write("¿Quieres añadir otro pasajero? (S/N): ");
+        añadirPersona = (Console.ReadLine() ?? "")
+            .Trim()
+            .Equals("S", StringComparison.OrdinalIgnoreCase);
+    }
+
+    return new Reserva(
+        destiny,
+        origin,
+        flightNumber,
+        personaXasiento,
+        DateOnly.FromDateTime(DateTime.Today)
+    );
+}
+
+// ------------------------------------------------------------
+// GUARDAR RESERVAS EN MARIADB
+// ------------------------------------------------------------
+
+async Task<int> GuardarReserva(string connectionString, Reserva reserva)
+{
+    await using var connection = new MySqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    await using var transaction = await connection.BeginTransactionAsync();
+
     try
     {
-        crearArchivo(ruta);
-        
-        File.AppendAllText(ruta, texto+"\n");
+        const string sqlReserva = @"
+            INSERT INTO Reserva
+                (destino, origen, flight_number, fecha, num_personas)
+            VALUES
+                (@destino, @origen, @flightNumber, @fecha, @numPersonas);";
+
+        await using var commandReserva =
+            new MySqlCommand(sqlReserva, connection, transaction);
+
+        commandReserva.Parameters.AddWithValue("@destino", reserva.destiny);
+        commandReserva.Parameters.AddWithValue("@origen", reserva.Origin);
+        commandReserva.Parameters.AddWithValue("@flightNumber", reserva.fnmber);
+        commandReserva.Parameters.AddWithValue(
+            "@fecha",
+            reserva.dt.ToDateTime(TimeOnly.MinValue)
+        );
+        commandReserva.Parameters.AddWithValue("@numPersonas", reserva.pXa.Count);
+
+        await commandReserva.ExecuteNonQueryAsync();
+
+        int idReserva = Convert.ToInt32(commandReserva.LastInsertedId);
+
+        foreach (var (persona, asiento) in reserva.pXa)
+        {
+            string[] apellidos = persona.Apellidos.Trim()
+                .Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+
+            string apellido1 = apellidos.Length > 0 ? apellidos[0] : "";
+            string? apellido2 = apellidos.Length > 1 ? apellidos[1] : null;
+
+            const string sqlPersona = @"
+                INSERT INTO Persona
+                    (Documento, Nombre, Apellido1, Apellido2, FechaNacimiento)
+                VALUES
+                    (@documento, @nombre, @apellido1, @apellido2, @fechaNacimiento)
+                ON DUPLICATE KEY UPDATE Documento = Documento;";
+
+            await using var commandPersona =
+                new MySqlCommand(sqlPersona, connection, transaction);
+
+            commandPersona.Parameters.AddWithValue("@documento", persona.Documento);
+            commandPersona.Parameters.AddWithValue("@nombre", persona.Nombre);
+            commandPersona.Parameters.AddWithValue("@apellido1", apellido1);
+            commandPersona.Parameters.AddWithValue(
+                "@apellido2",
+                (object?)apellido2 ?? DBNull.Value
+            );
+            commandPersona.Parameters.AddWithValue(
+                "@fechaNacimiento",
+                persona.FechaNacimiento.ToDateTime(TimeOnly.MinValue)
+            );
+
+            await commandPersona.ExecuteNonQueryAsync();
+
+            const string sqlRelacion = @"
+                INSERT INTO ReservaPersona
+                    (id_reserva, id_persona, Asiento)
+                VALUES
+                    (@idReserva, @idPersona, @asiento);";
+
+            await using var commandRelacion =
+                new MySqlCommand(sqlRelacion, connection, transaction);
+
+            commandRelacion.Parameters.AddWithValue("@idReserva", idReserva);
+            commandRelacion.Parameters.AddWithValue("@idPersona", persona.Documento);
+            commandRelacion.Parameters.AddWithValue("@asiento", asiento);
+
+            await commandRelacion.ExecuteNonQueryAsync();
+        }
+
+        await transaction.CommitAsync();
+
+        return idReserva;
     }
-    catch (Exception e)
+    catch
     {
-        Console.WriteLine("Ha ocurrido un error escribiendo en el archvo: "+ruta + "error:\n"+e);
+        await transaction.RollbackAsync();
         throw;
     }
 }
-void dividirReservas()
+
+// ------------------------------------------------------------
+// IMPORTACIÓN DE rawData/raw.csv
+// ------------------------------------------------------------
+
+async Task RecibirReservasDesdeRaw()
 {
-    List<string> raw =new List<string> { "rawData/raw.csv" };
-    List<string[]> contenido = leerArchivo(raw, false, false);
-    List<Reserva> Reservas = new List<Reserva>();
-    
-    foreach (string[] reg in  contenido)
+    string rutaRaw = Path.Combine(
+        AppContext.BaseDirectory,
+        "rawData",
+        "raw.csv"
+    );
+
+    if (!File.Exists(rutaRaw))
     {
-        foreach (string linea in reg.Skip(1))
+        Console.WriteLine($"No se encuentra el archivo: {rutaRaw}");
+        return;
+    }
+
+    string[] lineas = await File.ReadAllLinesAsync(rutaRaw);
+
+    if (lineas.Length <= 1)
+    {
+        Console.WriteLine("El CSV no contiene reservas para importar.");
+        return;
+    }
+
+    int importadas = 0;
+    int errores = 0;
+
+    Console.WriteLine($"Se han encontrado {lineas.Length - 1} registros.");
+    Console.Write("¿Quieres importarlos a la base de datos? (S/N): ");
+
+    if (!(Console.ReadLine() ?? "").Trim()
+        .Equals("S", StringComparison.OrdinalIgnoreCase))
+        return;
+
+    for (int i = 1; i < lineas.Length; i++)
+    {
+        string linea = lineas[i].Trim();
+
+        if (string.IsNullOrWhiteSpace(linea))
+            continue;
+
+        try
         {
-            Reservas.Add(Reserva.RecReserva(linea));
+            Reserva reserva = Reserva.RecReserva(linea);
+
+            int idReserva = await GuardarReserva(connectionString, reserva);
+
+            Console.WriteLine(
+                $"Línea {i + 1}: importada. ID de reserva: {idReserva}"
+            );
+
+            importadas++;
+        }
+        catch (Exception ex)
+        {
+            errores++;
+            Console.WriteLine(
+                $"Línea {i + 1}: no se ha podido importar. {ex.Message}"
+            );
         }
     }
 
-    Reservas.Sort((a, b) => a.getDate().CompareTo(b.getDate()));
+    Console.WriteLine("\n===== RESULTADO DE LA IMPORTACIÓN =====");
+    Console.WriteLine($"Importadas: {importadas}");
+    Console.WriteLine($"Con errores: {errores}");
+}
 
-    foreach (Reserva r in Reservas)
+// ------------------------------------------------------------
+// CONSULTAS DE RESERVAS EN MARIADB
+// ------------------------------------------------------------
+
+// Permite seleccionar un destino o todos los destinos.
+async Task<List<string>> SeleccionarDestinosBD()
+{
+    List<string> destinos = new();
+
+    await using var connection = new MySqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    const string sql = @"
+        SELECT DISTINCT destino
+        FROM Reserva
+        ORDER BY destino;";
+
+    await using var command = new MySqlCommand(sql, connection);
+    await using var reader = await command.ExecuteReaderAsync();
+
+    while (await reader.ReadAsync())
+        destinos.Add(reader.GetString("destino"));
+
+    if (destinos.Count == 0)
     {
-        escribirEnArchivo(r.reservaToRegistro()+"\n", "registros/"+r.destiny+".csv");
+        Console.WriteLine("No hay reservas registradas en la base de datos.");
+        return new List<string>();
+    }
+
+    Console.WriteLine("\nDestinos disponibles:");
+
+    for (int i = 0; i < destinos.Count; i++)
+        Console.WriteLine($"{i}. {destinos[i]}");
+
+    Console.WriteLine("-1. Seleccionar todos");
+    Console.Write("Selecciona un destino: ");
+
+    if (!int.TryParse(Console.ReadLine(), out int opcion))
+    {
+        Console.WriteLine("Selección no válida.");
+        return new List<string>();
+    }
+
+    if (opcion == -1)
+        return destinos;
+
+    if (opcion < 0 || opcion >= destinos.Count)
+    {
+        Console.WriteLine("No existe ese número de destino.");
+        return new List<string>();
+    }
+
+    return new List<string> { destinos[opcion] };
+}
+
+// Construye el filtro de destinos utilizando parámetros SQL.
+string CrearFiltroDestinos(
+    List<string> destinos,
+    MySqlCommand command)
+{
+    List<string> parametros = new();
+
+    for (int i = 0; i < destinos.Count; i++)
+    {
+        string nombreParametro = $"@destino{i}";
+
+        parametros.Add(nombreParametro);
+        command.Parameters.AddWithValue(nombreParametro, destinos[i]);
+    }
+
+    return $"r.destino IN ({string.Join(", ", parametros)})";
+}
+
+// Muestra reservas y pasajeros.
+// Si se proporciona una búsqueda, muestra todas las personas
+// de las reservas que coincidan con el texto.
+async Task MostrarReservasBD(
+    List<string> destinos,
+    bool lineaAlinea,
+    string? busqueda = null)
+{
+    if (destinos.Count == 0)
+        return;
+
+    await using var connection = new MySqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    const string sqlBase = @"
+        SELECT
+            r.id_reserva,
+            r.destino,
+            r.origen,
+            r.flight_number,
+            r.fecha,
+            r.num_personas,
+            p.Documento,
+            p.Nombre,
+            p.Apellido1,
+            p.Apellido2,
+            rp.Asiento
+        FROM Reserva r
+        INNER JOIN ReservaPersona rp
+            ON r.id_reserva = rp.id_reserva
+        INNER JOIN Persona p
+            ON rp.id_persona = p.Documento
+        WHERE ";
+
+    await using var command = new MySqlCommand(sqlBase, connection);
+
+    string filtroDestinos = CrearFiltroDestinos(destinos, command);
+
+    string sql = sqlBase + filtroDestinos;
+
+    if (!string.IsNullOrWhiteSpace(busqueda))
+    {
+        sql += @"
+            AND (
+                CONCAT_WS(' ',
+                    r.id_reserva,
+                    r.destino,
+                    r.origen,
+                    r.flight_number,
+                    DATE_FORMAT(r.fecha, '%d/%m/%Y')
+                ) LIKE @busqueda
+
+                OR EXISTS (
+                    SELECT 1
+                    FROM ReservaPersona rp2
+                    INNER JOIN Persona p2
+                        ON rp2.id_persona = p2.Documento
+                    WHERE rp2.id_reserva = r.id_reserva
+                    AND CONCAT_WS(' ',
+                        p2.Documento,
+                        p2.Nombre,
+                        p2.Apellido1,
+                        p2.Apellido2,
+                        rp2.Asiento
+                    ) LIKE @busqueda
+                )
+            )";
+
+        command.Parameters.AddWithValue("@busqueda", $"%{busqueda}%");
+    }
+
+    sql += @"
+        ORDER BY r.fecha DESC, r.id_reserva, rp.Asiento;";
+
+    command.CommandText = sql;
+
+    await using var reader = await command.ExecuteReaderAsync();
+
+    bool encontrado = false;
+    int ultimaReserva = -1;
+
+    while (await reader.ReadAsync())
+    {
+        encontrado = true;
+
+        int idReserva = reader.GetInt32("id_reserva");
+
+        if (idReserva != ultimaReserva)
+        {
+            if (lineaAlinea)
+            {
+                Console.WriteLine("\nPulsa ENTER para continuar...");
+                Console.ReadLine();
+            }
+
+            Console.WriteLine("\n----------------------------------------");
+            Console.WriteLine($"RESERVA Nº: {idReserva}");
+            Console.WriteLine($"Origen: {reader["origen"]}");
+            Console.WriteLine($"Destino: {reader["destino"]}");
+            Console.WriteLine($"Vuelo: {reader["flight_number"]}");
+
+            Console.WriteLine(
+                $"Fecha: {Convert.ToDateTime(reader["fecha"]):dd/MM/yyyy}"
+            );
+
+            Console.WriteLine($"Número de pasajeros: {reader["num_personas"]}");
+            Console.WriteLine("Pasajeros:");
+
+            ultimaReserva = idReserva;
+        }
+
+        string apellido2 = reader.IsDBNull(reader.GetOrdinal("Apellido2"))
+            ? ""
+            : $" {reader["Apellido2"]}";
+
+        Console.WriteLine(
+            $"  - {reader["Nombre"]} {reader["Apellido1"]}{apellido2}" +
+            $" | DNI: {reader["Documento"]}" +
+            $" | Asiento: {reader["Asiento"]}"
+        );
+    }
+
+    if (!encontrado)
+        Console.WriteLine("\nNo se han encontrado reservas.");
+}
+
+// ------------------------------------------------------------
+// OPCIÓN 2: CONSULTAR RESERVAS
+// ------------------------------------------------------------
+
+async Task LeerReservasBD()
+{
+    List<string> destinos = await SeleccionarDestinosBD();
+
+    if (destinos.Count == 0)
+        return;
+
+    Console.Write("¿Quieres leer línea a línea? (S/N): ");
+
+    bool lineaAlinea = (Console.ReadLine() ?? "")
+        .Trim()
+        .Equals("S", StringComparison.OrdinalIgnoreCase);
+
+    await MostrarReservasBD(destinos, lineaAlinea);
+}
+
+// ------------------------------------------------------------
+// OPCIÓN 3: BUSCAR RESERVAS
+// ------------------------------------------------------------
+
+async Task BuscarReservasBD()
+{
+    List<string> destinos = await SeleccionarDestinosBD();
+
+    if (destinos.Count == 0)
+        return;
+
+    string texto = LeerTextoObligatorio("Texto que quieres buscar: ");
+
+    await MostrarReservasBD(destinos, false, texto);
+}
+
+// ------------------------------------------------------------
+// GESTIÓN DE USUARIOS (SOLO ADMINISTRADORES)
+// ------------------------------------------------------------
+
+async Task CrearUsuario()
+{
+    if (!Sesion.EsAdministrador() || Sesion.UsuarioActual == null)
+    {
+        Console.WriteLine("No tienes permisos para crear usuarios.");
+        return;
+    }
+
+    Console.WriteLine("\n===== CREAR USUARIO =====");
+
+    string documento = LeerTextoObligatorio("Documento: ");
+    string nombre = LeerTextoObligatorio("Nombre: ");
+    string apellido1 = LeerTextoObligatorio("Primer apellido: ");
+
+    Console.Write("Segundo apellido (opcional): ");
+    string? apellido2 = Console.ReadLine();
+
+    if (string.IsNullOrWhiteSpace(apellido2))
+        apellido2 = null;
+
+    Console.Write("Contraseña: ");
+    string contraseña = Console.ReadLine() ?? "";
+
+    if (string.IsNullOrWhiteSpace(contraseña))
+    {
+        Console.WriteLine("La contraseña no puede estar vacía.");
+        return;
+    }
+
+    Console.WriteLine("Tipo de usuario:");
+    Console.WriteLine("1. Empleado");
+    Console.WriteLine("2. Administrador");
+    Console.Write("Opción: ");
+
+    string tipoUsuario = (Console.ReadLine() ?? "") switch
+    {
+        "1" => "empleado",
+        "2" => "administrador",
+        _ => ""
+    };
+
+    if (tipoUsuario == "")
+    {
+        Console.WriteLine("Tipo de usuario no válido.");
+        return;
+    }
+
+    string passwordHash = BCrypt.Net.BCrypt.HashPassword(contraseña);
+
+    await using var connection = new MySqlConnection(connectionString);
+    await connection.OpenAsync();
+
+    const string sql = @"
+        CALL crear_usuario(
+            @actor,
+            @documento,
+            @nombre,
+            @apellido1,
+            @apellido2,
+            @passwordHash,
+            @tipoUsuario
+        );";
+
+    await using var command = new MySqlCommand(sql, connection);
+
+    command.Parameters.AddWithValue(
+        "@actor",
+        Sesion.UsuarioActual.Documento
+    );
+    command.Parameters.AddWithValue("@documento", documento);
+    command.Parameters.AddWithValue("@nombre", nombre);
+    command.Parameters.AddWithValue("@apellido1", apellido1);
+    command.Parameters.AddWithValue(
+        "@apellido2",
+        (object?)apellido2 ?? DBNull.Value
+    );
+    command.Parameters.AddWithValue("@passwordHash", passwordHash);
+    command.Parameters.AddWithValue("@tipoUsuario", tipoUsuario);
+
+    await command.ExecuteNonQueryAsync();
+
+    Console.WriteLine("Usuario creado correctamente.");
+}
+
+// ------------------------------------------------------------
+// UTILIDADES DE CONSOLA
+// ------------------------------------------------------------
+
+string LeerTextoObligatorio(string mensaje)
+{
+    while (true)
+    {
+        Console.Write(mensaje);
+
+        string valor = Console.ReadLine()?.Trim() ?? "";
+
+        if (!string.IsNullOrWhiteSpace(valor))
+            return valor;
+
+        Console.WriteLine("Este campo es obligatorio.");
     }
 }
 
-Reserva crearReserva()
+DateOnly LeerFecha(string mensaje)
 {
-    string terminado = "N";
-    string nombre;
-    string apellidosPersona = "";
-    int edad;
-    string dni = "";
-    Person persona;
-    int nPersonas = 0;
-    int asiento;
-
-    string destiny;
-    string origin;
-    string flightNumber;
-    Dictionary<Person, int> personaXasiento =new Dictionary<Person, int>();
-    Console.WriteLine("Introduzca el destina de la reserva (en codigo IATA): ");
-    destiny = Console.ReadLine();
-    Console.WriteLine("Introduzca el origen (en codigo IATA): ");
-    origin = Console.ReadLine();
-    Console.WriteLine("Inserte el codigo del vuelo: ");
-    flightNumber = Console.ReadLine();
-    do
+    while (true)
     {
+        Console.Write(mensaje);
 
-        Console.WriteLine("Ingrese el nombre de la persona n"+nPersonas);
-        nombre = Console.ReadLine();
-        Console.WriteLine("Ingrese los apellidos: ");
-        apellidosPersona = Console.ReadLine();
-        Console.WriteLine("Ingrese el documento de la persona: ");
-        dni = Console.ReadLine();
-        Console.WriteLine("Infrese la edad de la persona: ");
-        edad = int.Parse(Console.ReadLine());
-        Console.WriteLine("Ingrese el numero de asiento: ");
-        asiento = int.Parse(Console.ReadLine());
-        
-        persona = new Person(nombre, apellidosPersona, edad, dni);
-        personaXasiento.Add(persona, asiento);
+        string valor = Console.ReadLine() ?? "";
 
-        Console.WriteLine("Hay personas pendientes de entrar en la reserva? (S/N)");
-        terminado = Console.ReadLine();
-        nPersonas++;
+        if (DateOnly.TryParseExact(
+                valor,
+                "dd/MM/yyyy",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out DateOnly fecha))
+            return fecha;
 
+        Console.WriteLine("Fecha no válida. Usa el formato dd/MM/yyyy.");
+    }
+}
 
-    } while (terminado.Equals("S"));
+int LeerEnteroPositivo(string mensaje)
+{
+    while (true)
+    {
+        Console.Write(mensaje);
 
-    Reserva r1 = new Reserva(destiny, origin, flightNumber, personaXasiento, DateOnly.FromDateTime(DateTime.Now));
-    escribirEnArchivo(r1.reservaToRegistro()+"\n", "registros/"+r1.destiny+".csv");
-    return r1;
+        if (int.TryParse(Console.ReadLine(), out int valor) && valor > 0)
+            return valor;
+
+        Console.WriteLine("Introduce un número entero positivo.");
+    }
+}
+
+// ------------------------------------------------------------
+// EXPORTACIÓN CSV ANTIGUA
+// Se conserva para generar archivos manualmente al crear reservas.
+// ------------------------------------------------------------
+
+void CrearArchivo(string ruta)
+{
+    string? carpeta = Path.GetDirectoryName(ruta);
+
+    if (!string.IsNullOrEmpty(carpeta))
+        Directory.CreateDirectory(carpeta);
+
+    if (!File.Exists(ruta))
+    {
+        File.WriteAllText(
+            ruta,
+            "Prefijo_PaisOrigen_Año_Mes_Dia_PaisDestino_CodigoVuelo(Nombre_Apellidos_Documento_FechaNacimiento_Asiento)"
+            + Environment.NewLine
+        );
+    }
+}
+
+void EscribirEnArchivo(string texto, string ruta)
+{
+    CrearArchivo(ruta);
+    File.AppendAllText(ruta, texto + Environment.NewLine);
 }
